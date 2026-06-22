@@ -389,6 +389,135 @@ void WebServer::RunImpl(WebServerConfig config) {
       },
       {Post});
 
+  // ─── Waypoints 管理路由 ─────────────────────────────────────────────────
+
+  // GET /api/waypoints - 获取所有导航点
+  drogon::app().registerHandler(
+      "/api/waypoints",
+      [&json_cb](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& callback) {
+        if (req->getMethod() == drogon::Get) {
+          LOGGER_INFO("GET /api/waypoints");
+          MapManager* m = MapManager::Instance();
+          const std::string map_name = m->GetCurrentMapName();
+          if (map_name.empty()) {
+            json_cb(std::move(callback), JsonErrorBody("no current map"), drogon::k503ServiceUnavailable);
+            return;
+          }
+          const std::string waypoints_path = m->GetMapDir(map_name) + "/waypoints.json";
+          nlohmann::json arr = nlohmann::json::array();
+          if (fs::exists(waypoints_path)) {
+            std::ifstream ifs(waypoints_path);
+            try {
+              arr = nlohmann::json::parse(ifs);
+            } catch (...) {
+              arr = nlohmann::json::array();
+            }
+          }
+          json_cb(std::move(callback), arr.dump(), drogon::k200OK);
+          return;
+        }
+        // POST - 保存 waypoints
+        LOGGER_INFO("POST /api/waypoints");
+        MapManager* m = MapManager::Instance();
+        const std::string map_name = m->GetCurrentMapName();
+        if (map_name.empty()) {
+          json_cb(std::move(callback), JsonErrorBody("no current map"), drogon::k503ServiceUnavailable);
+          return;
+        }
+        nlohmann::json body;
+        try {
+          body = req->getBody().empty() ? nlohmann::json::array() : nlohmann::json::parse(req->getBody());
+        } catch (...) {
+          json_cb(std::move(callback), JsonErrorBody("invalid json"), drogon::k400BadRequest);
+          return;
+        }
+        if (!body.is_array()) {
+          json_cb(std::move(callback), JsonErrorBody("expected array"), drogon::k400BadRequest);
+          return;
+        }
+        const std::string waypoints_path = m->GetMapDir(map_name) + "/waypoints.json";
+        try {
+          std::ofstream ofs(waypoints_path);
+          ofs << body.dump(2);
+        } catch (const std::exception& e) {
+          json_cb(std::move(callback), JsonErrorBody(e.what()), drogon::k500InternalServerError);
+          return;
+        }
+        json_cb(std::move(callback), "{\"result\":\"ok\"}", drogon::k200OK);
+      },
+      {Get, Post});
+
+  // POST /robot/navigate_to_waypoint  - 发送定点导航目标给 Nav2
+  drogon::app().registerHandler(
+      "/robot/navigate_to_waypoint",
+      [&json_cb](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& callback) {
+        auto node = NodeManager::Instance()->GetNode();
+        if (!node) {
+          json_cb(std::move(callback), JsonErrorBody("ros node not ready"), drogon::k503ServiceUnavailable);
+          return;
+        }
+        nlohmann::json j;
+        try {
+          j = req->getBody().empty() ? nlohmann::json::object() : nlohmann::json::parse(req->getBody());
+        } catch (...) {
+          json_cb(std::move(callback), JsonErrorBody("invalid json"), drogon::k400BadRequest);
+          return;
+        }
+        WaypointData wp;
+        try {
+          wp.name  = j.value("name", std::string{});
+          wp.x     = j.at("x").get<double>();
+          wp.y     = j.at("y").get<double>();
+          wp.theta = j.value("theta", j.value("yaw", 0.0));
+        } catch (const nlohmann::json::exception&) {
+          json_cb(std::move(callback), JsonErrorBody("missing required fields: x, y"), drogon::k400BadRequest);
+          return;
+        }
+        LOGGER_INFO("POST /robot/navigate_to_waypoint name={} x={:.3f} y={:.3f} theta={:.3f}",
+            wp.name, wp.x, wp.y, wp.theta);
+        std::string err;
+        if (!node->NavigateToWaypoint(wp, &err)) {
+          json_cb(std::move(callback), JsonErrorBody(err), drogon::k400BadRequest);
+          return;
+        }
+        json_cb(std::move(callback), "{\"result\":\"ok\"}", drogon::k200OK);
+      },
+      {Post});
+
+  // POST /robot/cancel_waypoint_nav - 取消当前 Nav2 Action Goal
+  drogon::app().registerHandler(
+      "/robot/cancel_waypoint_nav",
+      [&json_cb](const HttpRequestPtr&, std::function<void(const HttpResponsePtr&)>&& callback) {
+        LOGGER_INFO("POST /robot/cancel_waypoint_nav");
+        auto node = NodeManager::Instance()->GetNode();
+        if (!node) {
+          json_cb(std::move(callback), JsonErrorBody("ros node not ready"), drogon::k503ServiceUnavailable);
+          return;
+        }
+        std::string err;
+        if (!node->CancelNavigation(&err)) {
+          json_cb(std::move(callback), JsonErrorBody(err), drogon::k400BadRequest);
+          return;
+        }
+        json_cb(std::move(callback), "{\"result\":\"ok\"}", drogon::k200OK);
+      },
+      {Post});
+
+  // GET /robot/nav_status - 查询当前导航状态
+  drogon::app().registerHandler(
+      "/robot/nav_status",
+      [&json_cb](const HttpRequestPtr&, std::function<void(const HttpResponsePtr&)>&& callback) {
+        auto node = NodeManager::Instance()->GetNode();
+        if (!node) {
+          json_cb(std::move(callback), JsonErrorBody("ros node not ready"), drogon::k503ServiceUnavailable);
+          return;
+        }
+        nlohmann::json j;
+        j["status"] = node->GetNavigationStatus();
+        json_cb(std::move(callback), j.dump(), drogon::k200OK);
+      },
+      {Get});
+
   drogon::app().registerHandler(
       "/getAllMapList",
       [&json_cb](const HttpRequestPtr&, std::function<void(const HttpResponsePtr&)>&& callback) {

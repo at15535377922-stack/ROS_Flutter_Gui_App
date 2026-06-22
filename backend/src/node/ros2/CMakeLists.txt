@@ -1,5 +1,6 @@
 find_package(OpenCV REQUIRED COMPONENTS core imgcodecs)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -24,6 +25,7 @@ target_link_libraries(ros_gui_node PRIVATE
   robot_stream
   robot_proto
   rclcpp::rclcpp
+  rclcpp_action::rclcpp_action
   tf2_ros::tf2_ros
   geometry_msgs::geometry_msgs__rosidl_typesupport_cpp
   std_msgs::std_msgs__rosidl_typesupport_cpp

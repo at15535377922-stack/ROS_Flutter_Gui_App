@@ -22,6 +22,7 @@ import 'package:ros_flutter_gui_app/page/setting_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_quick_commands_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_terminal_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_widgets.dart';
+import 'package:ros_flutter_gui_app/page/waypoint_nav_page.dart';
 
 class MainFlamePage extends StatefulWidget {
   @override
@@ -853,6 +854,23 @@ class _MainFlamePageState extends State<MainFlamePage> {
               icon: Icon(Icons.settings, color: theme.iconTheme.color),
               tooltip: l10n.setting,
               onPressed: () => _openSettings(context),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _MapToolbarShell(
+            theme,
+            child: IconButton(
+              style: tbStyle,
+              icon: Icon(Icons.my_location, color: theme.colorScheme.primary),
+              tooltip: '定点导航',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const WaypointNavPage(),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 6),

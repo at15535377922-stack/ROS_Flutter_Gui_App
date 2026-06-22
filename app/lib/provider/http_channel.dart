@@ -174,4 +174,64 @@ class HttpChannel {
     }
     return Map<String, dynamic>.from(jsonDecode(res.body) as Map);
   }
+
+  // ─── Waypoints API ────────────────────────────────────────────────────────
+
+  /// 获取当前地图的所有导航点列表
+  Future<List<Map<String, dynamic>>> getWaypoints() async {
+    final uri = _buildUri('/api/waypoints');
+    final res = await http.get(uri);
+    if (res.statusCode != 200) {
+      throw Exception('getWaypoints failed: ${res.statusCode} ${res.body}');
+    }
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  /// 保存导航点列表到服务器（覆盖当前地图的 waypoints.json）
+  Future<void> saveWaypoints(List<Map<String, dynamic>> waypoints) async {
+    final uri = _buildUri('/api/waypoints');
+    final res = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+      body: jsonEncode(waypoints),
+    );
+    if (res.statusCode != 200) {
+      throw Exception('saveWaypoints failed: ${res.statusCode} ${res.body}');
+    }
+  }
+
+  /// 通过 Nav2 Action 导航到指定 waypoint
+  Future<bool> navigateToWaypoint(
+      {required String name,
+      required double x,
+      required double y,
+      required double theta}) async {
+    final uri = _buildUri('/robot/navigate_to_waypoint');
+    final res = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+      body: jsonEncode({'name': name, 'x': x, 'y': y, 'theta': theta}),
+    );
+    return res.statusCode == 200;
+  }
+
+  /// 取消当前 Nav2 Action Goal
+  Future<bool> cancelWaypointNav() async {
+    final uri = _buildUri('/robot/cancel_waypoint_nav');
+    final res = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+    );
+    return res.statusCode == 200;
+  }
+
+  /// 查询当前导航状态: "idle" | "navigating" | "succeeded" | "failed" | "cancelling"
+  Future<String> getNavStatus() async {
+    final uri = _buildUri('/robot/nav_status');
+    final res = await http.get(uri);
+    if (res.statusCode != 200) return 'unknown';
+    final j = jsonDecode(res.body) as Map<String, dynamic>;
+    return j['status'] as String? ?? 'unknown';
+  }
 }

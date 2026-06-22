@@ -4,8 +4,17 @@
 #include "core/map/occupancy_grid.hpp"
 
 #include <string>
+#include <vector>
 
 namespace ros_gui_backend {
+
+// Waypoint 数据结构
+struct WaypointData {
+  std::string name;
+  double x;
+  double y;
+  double theta;
+};
 
 class IRosGuiNode {
  public:
@@ -23,6 +32,11 @@ class IRosGuiNode {
   virtual bool PublishMap(const OccupancyGridData& map, const std::string& frame_id) = 0;
   virtual bool LookupTransform(const std::string& target_frame, const std::string& source_frame,
       std::string* json_out, std::string* err) = 0;
+
+  // 定点导航接口
+  virtual bool NavigateToWaypoint(const WaypointData& waypoint, std::string* error_message) = 0;
+  virtual bool CancelNavigation(std::string* error_message) = 0;
+  virtual std::string GetNavigationStatus() = 0;
 };
 
 }  // namespace ros_gui_backend

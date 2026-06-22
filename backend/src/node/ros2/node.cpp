@@ -17,6 +17,9 @@
 #include <string>
 #include <vector>
 
+// tf2 quaternion
+#include "tf2/LinearMath/Quaternion.h"
+
 namespace fs = boost::filesystem;
 
 using namespace std::placeholders;
@@ -167,6 +170,10 @@ bool RosGuiNode::Init(const AppConfig& app_config) {
 
   pose_timer_ =
       create_wall_timer(std::chrono::milliseconds(50), std::bind(&RosGuiNode::PoseTimerTick, this));
+
+  // 初始化 Nav2 NavigateToPose Action Client
+  nav_action_client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
+  LOGGER_INFO("NavigateToPose action client created");
 
   return true;
 }
@@ -460,6 +467,110 @@ void RosGuiNode::OnCompressedImage(
   }
   frame->set_data(msg->data.data(), msg->data.size());
   RobotMessageHub::Instance().BroadcastRobotMsg(out);
+}
+
+// ─────────────────────────── 定点导航接口实现 ────────────────────────────
+
+bool RosGuiNode::NavigateToWaypoint(const WaypointData& waypoint, std::string* error_message) {
+  if (!nav_action_client_) {
+    if (error_message) *error_message = "action client not initialized";
+    return false;
+  }
+
+  // 非阻塞等待 action server（最多 1s）
+  if (!nav_action_client_->wait_for_action_server(std::chrono::seconds(1))) {
+    if (error_message) *error_message = "navigate_to_pose action server not available";
+    LOGGER_WARN("NavigateToWaypoint: action server not available");
+    return false;
+  }
+
+  auto goal_msg = NavigateToPose::Goal();
+  goal_msg.pose.header.frame_id = "map";
+  goal_msg.pose.header.stamp = now();
+  goal_msg.pose.pose.position.x = waypoint.x;
+  goal_msg.pose.pose.position.y = waypoint.y;
+  goal_msg.pose.pose.position.z = 0.0;
+
+  tf2::Quaternion q;
+  q.setRPY(0.0, 0.0, waypoint.theta);
+  goal_msg.pose.pose.orientation.x = q.x();
+  goal_msg.pose.pose.orientation.y = q.y();
+  goal_msg.pose.pose.orientation.z = q.z();
+  goal_msg.pose.pose.orientation.w = q.w();
+
+  {
+    std::lock_guard<std::mutex> lk(nav_mu_);
+    nav_status_ = "navigating";
+    current_nav_goal_handle_.reset();
+  }
+
+  auto send_goal_opts = rclcpp_action::Client<NavigateToPose>::SendGoalOptions();
+  send_goal_opts.goal_response_callback =
+      std::bind(&RosGuiNode::OnNavGoalResponse, this, std::placeholders::_1);
+  send_goal_opts.feedback_callback =
+      std::bind(&RosGuiNode::OnNavFeedback, this, std::placeholders::_1, std::placeholders::_2);
+  send_goal_opts.result_callback =
+      std::bind(&RosGuiNode::OnNavResult, this, std::placeholders::_1);
+
+  LOGGER_INFO("NavigateToWaypoint: sending goal '{}' x={:.3f} y={:.3f} theta={:.3f}",
+      waypoint.name, waypoint.x, waypoint.y, waypoint.theta);
+  nav_action_client_->async_send_goal(goal_msg, send_goal_opts);
+  return true;
+}
+
+bool RosGuiNode::CancelNavigation(std::string* error_message) {
+  std::lock_guard<std::mutex> lk(nav_mu_);
+  if (!current_nav_goal_handle_) {
+    if (error_message) *error_message = "no active navigation goal";
+    return false;
+  }
+  nav_action_client_->async_cancel_goal(current_nav_goal_handle_);
+  nav_status_ = "cancelling";
+  LOGGER_INFO("CancelNavigation: cancel requested");
+  return true;
+}
+
+std::string RosGuiNode::GetNavigationStatus() {
+  std::lock_guard<std::mutex> lk(nav_mu_);
+  return nav_status_;
+}
+
+void RosGuiNode::OnNavGoalResponse(const NavGoalHandle::SharedPtr& goal_handle) {
+  std::lock_guard<std::mutex> lk(nav_mu_);
+  if (!goal_handle) {
+    LOGGER_ERROR("Navigation goal was rejected by server");
+    nav_status_ = "failed";
+    current_nav_goal_handle_.reset();
+  } else {
+    LOGGER_INFO("Navigation goal accepted by server");
+    current_nav_goal_handle_ = goal_handle;
+    nav_status_ = "navigating";
+  }
+}
+
+void RosGuiNode::OnNavFeedback(NavGoalHandle::SharedPtr,
+    const std::shared_ptr<const NavigateToPose::Feedback> feedback) {
+  (void)feedback;
+  // 可在此处理进度反馈，例如距离剩余
+}
+
+void RosGuiNode::OnNavResult(const NavGoalHandle::WrappedResult& result) {
+  std::lock_guard<std::mutex> lk(nav_mu_);
+  current_nav_goal_handle_.reset();
+  switch (result.code) {
+    case rclcpp_action::ResultCode::SUCCEEDED:
+      LOGGER_INFO("Navigation goal succeeded");
+      nav_status_ = "succeeded";
+      break;
+    case rclcpp_action::ResultCode::CANCELED:
+      LOGGER_INFO("Navigation goal was cancelled");
+      nav_status_ = "idle";
+      break;
+    default:
+      LOGGER_ERROR("Navigation goal failed with code: {}", static_cast<int>(result.code));
+      nav_status_ = "failed";
+      break;
+  }
 }
 
 }  // namespace ros_gui_backend

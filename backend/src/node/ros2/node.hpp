@@ -14,7 +14,9 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "nav2_msgs/action/navigate_to_pose.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
@@ -28,6 +30,7 @@
 #include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -61,7 +64,15 @@ class RosGuiNode : private detail::RosGuiNodeRclInit, public rclcpp::Node, publi
   bool LookupTransform(const std::string& target_frame, const std::string& source_frame,
       std::string* json_out, std::string* err) override;
 
+  // 定点导航接口
+  bool NavigateToWaypoint(const WaypointData& waypoint, std::string* error_message) override;
+  bool CancelNavigation(std::string* error_message) override;
+  std::string GetNavigationStatus() override;
+
  private:
+  using NavigateToPose = nav2_msgs::action::NavigateToPose;
+  using NavGoalHandle = rclcpp_action::ClientGoalHandle<NavigateToPose>;
+
   void GetMapCallback(const std::shared_ptr<rmw_request_id_t>,
       const std::shared_ptr<nav_msgs::srv::GetMap::Request>,
       std::shared_ptr<nav_msgs::srv::GetMap::Response>);
@@ -93,6 +104,12 @@ class RosGuiNode : private detail::RosGuiNodeRclInit, public rclcpp::Node, publi
   void OnCameraImage(const std::string& ros_topic, const sensor_msgs::msg::Image::SharedPtr msg);
   void OnCompressedImage(
       const std::string& ros_topic, const sensor_msgs::msg::CompressedImage::SharedPtr msg);
+
+  // Nav Action 回调
+  void OnNavGoalResponse(const NavGoalHandle::SharedPtr& goal_handle);
+  void OnNavFeedback(NavGoalHandle::SharedPtr,
+      const std::shared_ptr<const NavigateToPose::Feedback> feedback);
+  void OnNavResult(const NavGoalHandle::WrappedResult& result);
 
   rclcpp::Service<nav_msgs::srv::GetMap>::SharedPtr get_map_service_;
   rclcpp::Service<nav2_msgs::srv::LoadMap>::SharedPtr load_map_service_;
@@ -127,6 +144,13 @@ class RosGuiNode : private detail::RosGuiNodeRclInit, public rclcpp::Node, publi
 
   std::chrono::steady_clock::time_point last_local_costmap_push_;
   std::chrono::steady_clock::time_point last_global_costmap_push_;
+
+  // Navigate To Pose Action Client
+  rclcpp_action::Client<NavigateToPose>::SharedPtr nav_action_client_;
+  NavGoalHandle::SharedPtr current_nav_goal_handle_;
+  std::mutex nav_mu_;
+  // "idle" | "navigating" | "succeeded" | "failed" | "cancelling"
+  std::string nav_status_{"idle"};
 };
 
 }  // namespace ros_gui_backend
