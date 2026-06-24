@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
@@ -37,6 +38,13 @@ class _MainFlamePageState extends State<MainFlamePage> {
   RouteInfo? _editingRouteInfo;
   bool _isRecoveringConnection = false;
   bool _sshRailExpanded = false;
+
+  // 地图点选导航
+  double? _pickedX;
+  double? _pickedY;
+  double _pickedTheta = 0.0; // 角度（弧度）
+  bool _isNavPickMode = false;
+  final List<Map<String, double>> _navTrajectory = []; // 多点轨迹
 
   // 相机相关变量
   Offset camPosition = Offset(30, 10); // 初始位置
@@ -312,6 +320,14 @@ class _MainFlamePageState extends State<MainFlamePage> {
                         _editingRouteInfo = null;
                       });
                     },
+                    onTapWorld: _isNavPickMode
+                        ? (wx, wy) {
+                            setState(() {
+                              _pickedX = wx;
+                              _pickedY = wy;
+                            });
+                          }
+                        : null,
                     onNavPointTap: (NavPoint? point) {
                       setState(() {
                         selectedNavPoint = point;
@@ -343,6 +359,21 @@ class _MainFlamePageState extends State<MainFlamePage> {
                     child: _buildSelectionPanel(theme),
                   ),
                   _buildBottomControls(context, theme),
+                  if (_isNavPickMode) ...[
+                    // 地图上的大头针标记层
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: _NavPickMarkerLayer(
+                          tileMapKey: _tileMapKey,
+                          pickedX: _pickedX,
+                          pickedY: _pickedY,
+                          pickedTheta: _pickedTheta,
+                          trajectory: _navTrajectory,
+                        ),
+                      ),
+                    ),
+                    _buildNavPickPanel(context, theme),
+                  ],
                   _buildCameraWidget(context, theme),
                   _buildGamepadWidget(context, theme),
                   _buildMapLegend(context, theme),
@@ -879,6 +910,30 @@ class _MainFlamePageState extends State<MainFlamePage> {
             child: IconButton(
               style: tbStyle,
               icon: Icon(
+                Icons.route,
+                color: _isNavPickMode
+                    ? Colors.orange
+                    : theme.iconTheme.color,
+              ),
+              tooltip: _isNavPickMode ? '退出地图选点导航' : '地图选点导航',
+              onPressed: () {
+                setState(() {
+                  _isNavPickMode = !_isNavPickMode;
+                  if (!_isNavPickMode) {
+                    _pickedX = null;
+                    _pickedY = null;
+                    _navTrajectory.clear();
+                  }
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          _MapToolbarShell(
+            theme,
+            child: IconButton(
+              style: tbStyle,
+              icon: Icon(
                 Icons.edit_document,
                 color: (Provider.of<GlobalState>(context, listen: false)
                             .mode
@@ -1077,6 +1132,334 @@ class _MainFlamePageState extends State<MainFlamePage> {
           );
         },
       ),
+    );
+  }
+
+  // ── 地图点选导航浮层 ──────────────────────────────────────────────
+  Widget _buildNavPickPanel(BuildContext context, ThemeData theme) {
+    final hasPoint = _pickedX != null && _pickedY != null;
+    final thetaDeg = _pickedTheta * 180.0 / 3.141592653589793;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Card(
+            elevation: 8,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 标题栏
+                  Row(
+                    children: [
+                      const Icon(Icons.route, color: Colors.orange, size: 20),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '地图选点导航',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                      ),
+                      // 提示
+                      Text(
+                        hasPoint ? '点击地图可重新选点' : '请在地图上点击选择目标点',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                      const SizedBox(width: 8),
+                      // 关闭
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          setState(() {
+                            _isNavPickMode = false;
+                            _pickedX = null;
+                            _pickedY = null;
+                            _navTrajectory.clear();
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  if (hasPoint) ...[
+                    const Divider(height: 12),
+                    // 坐标显示行
+                    Row(
+                      children: [
+                        _coordChip('X', _pickedX!.toStringAsFixed(3), Colors.blue),
+                        const SizedBox(width: 8),
+                        _coordChip('Y', _pickedY!.toStringAsFixed(3), Colors.green),
+                        const SizedBox(width: 8),
+                        // 朝向滑块
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '朝向: ${thetaDeg.toStringAsFixed(0)}°',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                              Slider(
+                                value: _pickedTheta,
+                                min: -3.141592653589793,
+                                max: 3.141592653589793,
+                                divisions: 72,
+                                onChanged: (v) => setState(() => _pickedTheta = v),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // 控制按钮行
+                    Row(
+                      children: [
+                        // 加入轨迹
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.add_location_alt, size: 16),
+                            label: Text('加入轨迹 (${_navTrajectory.length})'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.purple,
+                              side: const BorderSide(color: Colors.purple),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _navTrajectory.add({
+                                  'x': _pickedX!,
+                                  'y': _pickedY!,
+                                  'theta': _pickedTheta,
+                                });
+                              });
+                              toastification.show(
+                                context: context,
+                                type: ToastificationType.info,
+                                title: Text('已加入轨迹，共 ${_navTrajectory.length} 个点'),
+                                autoCloseDuration: const Duration(seconds: 2),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // 直接导航
+                        Expanded(
+                          child: FilledButton.icon(
+                            icon: const Icon(Icons.navigation, size: 16),
+                            label: const Text('立即导航'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => _sendPickedNavGoal(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // 轨迹列表（有轨迹时显示）
+                    if (_navTrajectory.isNotEmpty) ...[
+                      const Divider(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.linear_scale, size: 16, color: Colors.purple),
+                          const SizedBox(width: 6),
+                          Text(
+                            '轨迹路径 (${_navTrajectory.length} 个点)',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.purple),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            icon: const Icon(Icons.delete_sweep, size: 14),
+                            label: const Text('清空', style: TextStyle(fontSize: 12)),
+                            style: TextButton.styleFrom(foregroundColor: Colors.red, padding: EdgeInsets.zero),
+                            onPressed: () => setState(() => _navTrajectory.clear()),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        height: 36,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _navTrajectory.length,
+                          separatorBuilder: (_, __) => const Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
+                          itemBuilder: (_, i) {
+                            final p = _navTrajectory[i];
+                            return GestureDetector(
+                              onLongPress: () {
+                                setState(() => _navTrajectory.removeAt(i));
+                              },
+                              child: Chip(
+                                label: Text(
+                                  'P${i + 1}(${p['x']!.toStringAsFixed(1)},${p['y']!.toStringAsFixed(1)})',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                backgroundColor: Colors.purple[50],
+                                deleteIcon: const Icon(Icons.close, size: 12),
+                                onDeleted: () => setState(() => _navTrajectory.removeAt(i)),
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      // 按顺序执行轨迹
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.play_arrow, size: 16),
+                          label: Text('按顺序执行 ${_navTrajectory.length} 个导航点'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.purple,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => _executeTrajectory(),
+                        ),
+                      ),
+                    ],
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.touch_app, color: Colors.grey[400], size: 28),
+                        const SizedBox(width: 8),
+                        Text(
+                          '点击上方地图任意位置选择目标点',
+                          style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _coordChip(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+          Text(value, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendPickedNavGoal() async {
+    if (_pickedX == null || _pickedY == null) return;
+    final httpChannel = context.read<HttpChannel>();
+    try {
+      final resp = await httpChannel.navigateToWaypoint(
+        name: 'map_pick',
+        x: _pickedX!,
+        y: _pickedY!,
+        theta: _pickedTheta,
+      );
+      if (!mounted) return;
+      toastification.show(
+        context: context,
+        type: resp ? ToastificationType.info : ToastificationType.error,
+        title: Text(resp
+            ? '导航指令已发送 (${_pickedX!.toStringAsFixed(2)}, ${_pickedY!.toStringAsFixed(2)})'
+            : '导航失败，请检查 Nav2 是否运行'),
+        autoCloseDuration: const Duration(seconds: 3),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      toastification.show(
+        context: context,
+        type: ToastificationType.error,
+        title: Text('导航请求失败: $e'),
+        autoCloseDuration: const Duration(seconds: 3),
+      );
+    }
+  }
+
+  Future<void> _executeTrajectory() async {
+    if (_navTrajectory.isEmpty) return;
+    final httpChannel = context.read<HttpChannel>();
+    toastification.show(
+      context: context,
+      type: ToastificationType.info,
+      title: Text('开始执行 ${_navTrajectory.length} 点轨迹导航'),
+      autoCloseDuration: const Duration(seconds: 3),
+    );
+    for (int i = 0; i < _navTrajectory.length; i++) {
+      final p = _navTrajectory[i];
+      if (!mounted) return;
+      toastification.show(
+        context: context,
+        type: ToastificationType.info,
+        title: Text('导航至第 ${i + 1}/${_navTrajectory.length} 点'),
+        autoCloseDuration: const Duration(seconds: 2),
+      );
+      try {
+        await httpChannel.navigateToWaypoint(
+          name: 'traj_${i + 1}',
+          x: p['x']!,
+          y: p['y']!,
+          theta: p['theta']!,
+        );
+        // 等待到达（轮询状态）
+        for (int wait = 0; wait < 60; wait++) {
+          await Future.delayed(const Duration(seconds: 1));
+          if (!mounted) return;
+          final status = await httpChannel.getNavStatus();
+          if (status == 'succeeded' || status == 'idle') break;
+          if (status == 'failed') {
+            toastification.show(
+              context: context,
+              type: ToastificationType.error,
+              title: Text('第 ${i + 1} 个点导航失败，终止轨迹'),
+              autoCloseDuration: const Duration(seconds: 3),
+            );
+            return;
+          }
+        }
+      } catch (e) {
+        if (!mounted) return;
+        toastification.show(
+          context: context,
+          type: ToastificationType.error,
+          title: Text('第 ${i + 1} 个点执行失败: $e'),
+          autoCloseDuration: const Duration(seconds: 3),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    toastification.show(
+      context: context,
+      type: ToastificationType.success,
+      title: Text('轨迹执行完成，共 ${_navTrajectory.length} 个点'),
+      autoCloseDuration: const Duration(seconds: 3),
     );
   }
 
@@ -1315,4 +1698,196 @@ class _MainFlamePageState extends State<MainFlamePage> {
   void dispose() {
     super.dispose();
   }
+}
+
+// ── 地图选点标记层 ─────────────────────────────────────────────────────────────
+class _NavPickMarkerLayer extends StatelessWidget {
+  final GlobalKey<TileMapState> tileMapKey;
+  final double? pickedX;
+  final double? pickedY;
+  final double pickedTheta;
+  final List<Map<String, double>> trajectory;
+
+  const _NavPickMarkerLayer({
+    required this.tileMapKey,
+    required this.pickedX,
+    required this.pickedY,
+    required this.pickedTheta,
+    required this.trajectory,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _NavPickPainter(
+        tileMapKey: tileMapKey,
+        pickedX: pickedX,
+        pickedY: pickedY,
+        pickedTheta: pickedTheta,
+        trajectory: trajectory,
+      ),
+    );
+  }
+}
+
+class _NavPickPainter extends CustomPainter {
+  final GlobalKey<TileMapState> tileMapKey;
+  final double? pickedX;
+  final double? pickedY;
+  final double pickedTheta;
+  final List<Map<String, double>> trajectory;
+
+  _NavPickPainter({
+    required this.tileMapKey,
+    required this.pickedX,
+    required this.pickedY,
+    required this.pickedTheta,
+    required this.trajectory,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final state = tileMapKey.currentState;
+    if (state == null) return;
+
+    // 1. 画轨迹连线 + 轨迹点
+    if (trajectory.isNotEmpty) {
+      final linePaint = Paint()
+        ..color = Colors.purple.withValues(alpha: 0.7)
+        ..strokeWidth = 2.5
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+
+      final List<Offset> trajOffsets = [];
+      for (final p in trajectory) {
+        final off = state.worldToScreen(p['x']!, p['y']!);
+        if (off != null) trajOffsets.add(off);
+      }
+
+      // 连线
+      for (int i = 0; i < trajOffsets.length - 1; i++) {
+        canvas.drawLine(trajOffsets[i], trajOffsets[i + 1], linePaint);
+      }
+
+      // 轨迹点（小圆圈 + 序号）
+      for (int i = 0; i < trajOffsets.length; i++) {
+        final off = trajOffsets[i];
+        canvas.drawCircle(
+          off,
+          9,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.fill,
+        );
+        canvas.drawCircle(
+          off,
+          9,
+          Paint()
+            ..color = Colors.purple
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+        // 序号文字
+        final tp = TextPainter(
+          text: TextSpan(
+            text: '${i + 1}',
+            style: const TextStyle(
+              color: Colors.purple,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, off - Offset(tp.width / 2, tp.height / 2));
+      }
+    }
+
+    // 2. 画当前选点（大头针效果）
+    if (pickedX != null && pickedY != null) {
+      final off = state.worldToScreen(pickedX!, pickedY!);
+      if (off != null) {
+        _drawPin(canvas, off, pickedTheta);
+      }
+    }
+  }
+
+  void _drawPin(Canvas canvas, Offset center, double theta) {
+    const pinR = 14.0;
+
+    // 方向箭头：theta 是 ROS yaw（逆时针为正，x 轴朝右为 0）
+    // 屏幕坐标系 y 轴朝下，所以 screenDx = cos(theta), screenDy = -sin(theta)
+    final dx = pinR * 2.0 * math.cos(theta);
+    final dy = pinR * 2.0 * (-math.sin(theta));
+    final arrowTip = center + Offset(dx, dy);
+
+    canvas.drawLine(
+      center,
+      arrowTip,
+      Paint()
+        ..color = Colors.blue.shade700
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
+    // 箭头头部小三角
+    _drawArrowHead(canvas, center, arrowTip, Colors.blue.shade700);
+
+    // 外圈（白色描边）
+    canvas.drawCircle(
+      center,
+      pinR + 2,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    // 填充圆
+    canvas.drawCircle(
+      center,
+      pinR,
+      Paint()
+        ..color = Colors.blue.shade600
+        ..style = PaintingStyle.fill,
+    );
+    // 内圆（空心）
+    canvas.drawCircle(
+      center,
+      pinR * 0.45,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    // 脉冲外圈（半透明）
+    canvas.drawCircle(
+      center,
+      pinR + 7,
+      Paint()
+        ..color = Colors.blue.withValues(alpha: 0.25)
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  void _drawArrowHead(Canvas canvas, Offset from, Offset to, Color color) {
+    final dir = (to - from);
+    final len = dir.distance;
+    if (len < 1) return;
+    final unit = dir / len;
+    final perp = Offset(-unit.dy, unit.dx);
+    const headLen = 8.0;
+    const headWidth = 5.0;
+    final p1 = to - unit * headLen + perp * headWidth;
+    final p2 = to - unit * headLen - perp * headWidth;
+    final path = Path()
+      ..moveTo(to.dx, to.dy)
+      ..lineTo(p1.dx, p1.dy)
+      ..lineTo(p2.dx, p2.dy)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color..style = PaintingStyle.fill);
+  }
+
+  @override
+  bool shouldRepaint(_NavPickPainter oldDelegate) =>
+      oldDelegate.pickedX != pickedX ||
+      oldDelegate.pickedY != pickedY ||
+      oldDelegate.pickedTheta != pickedTheta ||
+      oldDelegate.trajectory.length != trajectory.length;
 }

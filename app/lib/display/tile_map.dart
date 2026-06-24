@@ -477,6 +477,17 @@ class TileMapState extends State<TileMap> {
 
   WorldToLatLngFn _worldToLatLng(MapMeta meta) => (x, y) => worldToLatLng(meta, x, y);
 
+  /// 将地图世界坐标转换为当前屏幕像素坐标（相对于 FlutterMap widget 左上角）。
+  /// 返回 null 表示地图元数据尚未加载。
+  Offset? worldToScreen(double worldX, double worldY) {
+    final meta = _meta;
+    if (meta == null) return null;
+    final latLng = worldToLatLng(meta, worldX, worldY);
+    final camera = _mapController.camera;
+    final offset = camera.getOffsetFromOrigin(latLng);
+    return offset;
+  }
+
   Map<int, int> getObstacleEdits() => Map.unmodifiable(_obstacleEdits);
 
   void clearObstacleEdits() {

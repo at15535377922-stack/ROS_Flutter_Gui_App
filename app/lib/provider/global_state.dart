@@ -11,6 +11,7 @@ enum Mode {
   addNavPoint,
   robotFixedCenter,
   mapEdit,
+  mapNavPick, // 地图点选导航模式
 }
 
 class GlobalState extends ChangeNotifier {

@@ -79,5 +79,6 @@
         "variant": "cpp",
         "coroutine": "cpp",
         "source_location": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "D:/UserFiles/Desktop/ROS2_R550/ROS_Flutter_Gui_App/app/linux"
 }
