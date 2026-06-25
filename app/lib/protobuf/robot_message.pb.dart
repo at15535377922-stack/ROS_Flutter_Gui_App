@@ -537,6 +537,7 @@ enum RobotMessage_Payload {
   globalCostmap,
   pointcloudMap,
   diagnostic,
+    map,
   navStatus,
   transformLookupResponse,
   notSet
@@ -558,6 +559,7 @@ class RobotMessage extends $pb.GeneratedMessage {
     $2.OccupancyGridProto? globalCostmap,
     $1.PointCloud2MapFrame? pointcloudMap,
     $3.DiagnosticArray? diagnostic,
+    $2.OccupancyGridProto? map,
     $4.GoalStatusArray? navStatus,
     TransformLookupResponse? transformLookupResponse,
   }) {
@@ -576,6 +578,7 @@ class RobotMessage extends $pb.GeneratedMessage {
     if (globalCostmap != null) result.globalCostmap = globalCostmap;
     if (pointcloudMap != null) result.pointcloudMap = pointcloudMap;
     if (diagnostic != null) result.diagnostic = diagnostic;
+    if (map != null) result.map = map;
     if (navStatus != null) result.navStatus = navStatus;
     if (transformLookupResponse != null)
       result.transformLookupResponse = transformLookupResponse;
@@ -607,6 +610,7 @@ class RobotMessage extends $pb.GeneratedMessage {
     13: RobotMessage_Payload.globalCostmap,
     14: RobotMessage_Payload.pointcloudMap,
     15: RobotMessage_Payload.diagnostic,
+    16: RobotMessage_Payload.map,
     17: RobotMessage_Payload.navStatus,
     18: RobotMessage_Payload.transformLookupResponse,
     0: RobotMessage_Payload.notSet
@@ -616,7 +620,7 @@ class RobotMessage extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'ros_gui_backend.pb'),
       createEmptyInstance: create)
-    ..oo(0, [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18])
+    ..oo(0, [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])
     ..aOM<ImageFrame>(1, _omitFieldNames ? '' : 'image',
         subBuilder: ImageFrame.create)
     ..aOM<Heartbeat>(3, _omitFieldNames ? '' : 'heartbeat',
@@ -645,6 +649,8 @@ class RobotMessage extends $pb.GeneratedMessage {
         subBuilder: $1.PointCloud2MapFrame.create)
     ..aOM<$3.DiagnosticArray>(15, _omitFieldNames ? '' : 'diagnostic',
         subBuilder: $3.DiagnosticArray.create)
+    ..aOM<$2.OccupancyGridProto>(16, _omitFieldNames ? '' : 'map',
+        subBuilder: $2.OccupancyGridProto.create)
     ..aOM<$4.GoalStatusArray>(17, _omitFieldNames ? '' : 'navStatus',
         subBuilder: $4.GoalStatusArray.create)
     ..aOM<TransformLookupResponse>(
@@ -685,6 +691,7 @@ class RobotMessage extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
   @$pb.TagNumber(15)
+    @$pb.TagNumber(16)
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
   RobotMessage_Payload whichPayload() =>
@@ -703,6 +710,7 @@ class RobotMessage extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
   @$pb.TagNumber(15)
+    @$pb.TagNumber(16)
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
   void clearPayload() => $_clearField($_whichOneof(0));
@@ -861,28 +869,39 @@ class RobotMessage extends $pb.GeneratedMessage {
   @$pb.TagNumber(15)
   $3.DiagnosticArray ensureDiagnostic() => $_ensure(13);
 
+    @$pb.TagNumber(16)
+    $2.OccupancyGridProto get map => $_getN(14);
+    @$pb.TagNumber(16)
+    set map($2.OccupancyGridProto value) => $_setField(16, value);
+    @$pb.TagNumber(16)
+    $core.bool hasMap() => $_has(14);
+    @$pb.TagNumber(16)
+    void clearMap() => $_clearField(16);
+    @$pb.TagNumber(16)
+    $2.OccupancyGridProto ensureMap() => $_ensure(14);
+
   @$pb.TagNumber(17)
-  $4.GoalStatusArray get navStatus => $_getN(14);
+    $4.GoalStatusArray get navStatus => $_getN(15);
   @$pb.TagNumber(17)
   set navStatus($4.GoalStatusArray value) => $_setField(17, value);
   @$pb.TagNumber(17)
-  $core.bool hasNavStatus() => $_has(14);
+    $core.bool hasNavStatus() => $_has(15);
   @$pb.TagNumber(17)
   void clearNavStatus() => $_clearField(17);
   @$pb.TagNumber(17)
-  $4.GoalStatusArray ensureNavStatus() => $_ensure(14);
+    $4.GoalStatusArray ensureNavStatus() => $_ensure(15);
 
   @$pb.TagNumber(18)
-  TransformLookupResponse get transformLookupResponse => $_getN(15);
+    TransformLookupResponse get transformLookupResponse => $_getN(16);
   @$pb.TagNumber(18)
   set transformLookupResponse(TransformLookupResponse value) =>
       $_setField(18, value);
   @$pb.TagNumber(18)
-  $core.bool hasTransformLookupResponse() => $_has(15);
+    $core.bool hasTransformLookupResponse() => $_has(16);
   @$pb.TagNumber(18)
   void clearTransformLookupResponse() => $_clearField(18);
   @$pb.TagNumber(18)
-  TransformLookupResponse ensureTransformLookupResponse() => $_ensure(15);
+    TransformLookupResponse ensureTransformLookupResponse() => $_ensure(16);
 }
 
 enum ClientRobotMessage_Payload {

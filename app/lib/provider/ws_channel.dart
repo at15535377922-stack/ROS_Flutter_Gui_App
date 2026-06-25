@@ -286,6 +286,9 @@ class WsChannel {
       case RobotMessage_Payload.footprint:
         _onFootprintPb(msg.footprint);
         break;
+      case RobotMessage_Payload.map:
+        mapManager.updateOccupancyMapFromRos(_occupancyFromProto(msg.map));
+        break;
       case RobotMessage_Payload.localCostmap:
         localCostmap.value = _occupancyFromProto(msg.localCostmap);
         break;
