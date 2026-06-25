@@ -6,8 +6,10 @@ import 'package:ros_flutter_gui_app/provider/http_channel.dart';
 Future<void> ShowSshConfigSheet(BuildContext parentContext) async {
   final l10n = AppLocalizations.of(parentContext)!;
   final portCtrl = TextEditingController(text: '${globalSetting.SSHPort}');
-  final userCtrl = TextEditingController(text: globalSetting.SSHUsername);
-  final passCtrl = TextEditingController(text: globalSetting.SSHPassword);
+  final userCtrl = TextEditingController(
+      text: globalSetting.SSHUsername.isEmpty ? 'wheeltec' : globalSetting.SSHUsername);
+  final passCtrl = TextEditingController(
+      text: globalSetting.SSHPassword.isEmpty ? 'dongguan' : globalSetting.SSHPassword);
   final robotIp = globalSetting.robotIp.trim();
 
   final ok = await showModalBottomSheet<bool>(

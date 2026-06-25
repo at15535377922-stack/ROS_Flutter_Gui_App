@@ -55,7 +55,7 @@ class WsChannel {
   bool isReconnect_ = false;
 
   bool manualCtrlMode_ = false;
-  ValueNotifier<double> battery_ = ValueNotifier(78);
+  ValueNotifier<double> battery_ = ValueNotifier(0);
   ValueNotifier<Uint8List> imageData = ValueNotifier(Uint8List(0));
   ValueNotifier<Uint8List?> imageFrame = ValueNotifier<Uint8List?>(null);
   RobotSpeed cmdVel_ = RobotSpeed(vx: 0, vy: 0, vw: 0);

@@ -52,8 +52,8 @@ class Setting {
 
   String SSHHost = '';
   int SSHPort = 22;
-  String SSHUsername = '';
-  String SSHPassword = '';
+  String SSHUsername = 'wheeltec';
+  String SSHPassword = 'dongguan';
   List<SshQuickCmd> SSHQuickCommands = [];
   int MapTileFreeColor = 0xFFFFFFFF;
   int MapTileOccColor = 0xFF000000;
@@ -352,8 +352,10 @@ class Setting {
     } else {
       SSHPort = 22;
     }
-    SSHUsername = '${j['SSHUsername'] ?? ''}';
-    SSHPassword = '${j['SSHPassword'] ?? ''}';
+    final _u = '${j['SSHUsername'] ?? ''}';
+    if (_u.isNotEmpty) SSHUsername = _u;
+    final _p = '${j['SSHPassword'] ?? ''}';
+    if (_p.isNotEmpty) SSHPassword = _p;
     final qc = j['SSHQuickCommands'];
     if (qc is List) {
       SSHQuickCommands = qc

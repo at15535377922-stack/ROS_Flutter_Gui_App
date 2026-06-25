@@ -1,5 +1,6 @@
 #include "node/ros2/node.hpp"
 
+#include "std_msgs/msg/float32.hpp"
 #include "core/map/json.hpp"
 #include "core/robot_stream/robot_message_hub.hpp"
 #include "common/config/config.hpp"
@@ -239,6 +240,12 @@ void RosGuiNode::SetupGuiStreamsLocked() {
   add(create_subscription<sensor_msgs::msg::BatteryState>(
       NormalizeTopicName(gui_settings_.BatteryTopic), rclcpp::QoS(10),
       std::bind(&RosGuiNode::OnBattery, this, _1), sub_opt));
+
+  // Wheeltec 小车使用 std_msgs/Float32 发布电压到 /PowerVoltage
+  // 满电约 12.6V，欠压警告 10V，以此区间线性映射为百分比
+  add(create_subscription<std_msgs::msg::Float32>(
+      "/PowerVoltage", rclcpp::QoS(10),
+      std::bind(&RosGuiNode::OnPowerVoltage, this, _1), sub_opt));
 
   add(create_subscription<geometry_msgs::msg::PolygonStamped>(
       NormalizeTopicName(gui_settings_.RobotFootprintTopic), rclcpp::QoS(10),
@@ -488,6 +495,26 @@ void RosGuiNode::OnBattery(const sensor_msgs::msg::BatteryState::SharedPtr msg) 
   } else {
     pct = static_cast<int>(std::lround(static_cast<double>(msg->percentage)));
   }
+  b->set_percentage(pct);
+  BroadcastRobotMsg(out);
+}
+
+// Wheeltec /PowerVoltage 话题处理
+// 电压范围：10.0V（0%）~ 12.6V（100%），低于10V钳位到0
+void RosGuiNode::OnPowerVoltage(const std_msgs::msg::Float32::SharedPtr msg) {
+  constexpr double kMinV = 10.0;   // 欠压警告值，对应0%
+  constexpr double kMaxV = 12.6;   // 满电电压，对应100%
+  const double v = static_cast<double>(msg->data);
+  int pct = 0;
+  if (v >= kMaxV) {
+    pct = 100;
+  } else if (v > kMinV) {
+    pct = static_cast<int>(std::lround((v - kMinV) / (kMaxV - kMinV) * 100.0));
+  } else {
+    pct = 0;
+  }
+  ros_gui_backend::pb::RobotMessage out;
+  auto* b = out.mutable_battery();
   b->set_percentage(pct);
   BroadcastRobotMsg(out);
 }

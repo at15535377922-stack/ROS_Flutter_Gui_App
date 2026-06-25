@@ -21,6 +21,7 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "std_msgs/msg/empty.hpp"
+#include "std_msgs/msg/float32.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 
@@ -94,6 +95,7 @@ class RosGuiNode : private detail::RosGuiNodeRclInit, public rclcpp::Node, publi
   void OnTracePath(const nav_msgs::msg::Path::SharedPtr msg);
   void OnOdom(const nav_msgs::msg::Odometry::SharedPtr msg);
   void OnBattery(const sensor_msgs::msg::BatteryState::SharedPtr msg);
+  void OnPowerVoltage(const std_msgs::msg::Float32::SharedPtr msg);
   void OnFootprint(const geometry_msgs::msg::PolygonStamped::SharedPtr msg);
   void OnLocalCostmap(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void OnGlobalCostmap(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);

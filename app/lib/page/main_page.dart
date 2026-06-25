@@ -24,6 +24,8 @@ import 'package:ros_flutter_gui_app/page/ssh_quick_commands_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_terminal_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_widgets.dart';
 import 'package:ros_flutter_gui_app/page/waypoint_nav_page.dart';
+import 'package:ros_flutter_gui_app/page/mapping_page.dart';
+import 'package:ros_flutter_gui_app/page/map_list_page.dart';
 
 class MainFlamePage extends StatefulWidget {
   @override
@@ -500,20 +502,31 @@ class _MainFlamePageState extends State<MainFlamePage> {
               // 电池电量显示
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                child: RawChip(
-                  avatar: Icon(
-                    const IconData(0xe995, fontFamily: "Battery"),
-                    color: Colors.amber[300],
-                  ),
-                  backgroundColor: chipBackgroundColor,
-                  label: ValueListenableBuilder<double>(
-                    valueListenable:
-                        Provider.of<WsChannel>(context, listen: false)
-                            .battery_,
-                    builder: (context, battery, child) {
-                      return Text('${battery.toStringAsFixed(0)} %');
-                    },
-                  ),
+                child: ValueListenableBuilder<double>(
+                  valueListenable:
+                      Provider.of<WsChannel>(context, listen: false)
+                          .battery_,
+                  builder: (context, battery, child) {
+                    final bool lowBattery = battery > 0 && battery <= 15;
+                    return RawChip(
+                      avatar: Icon(
+                        const IconData(0xe995, fontFamily: "Battery"),
+                        color: lowBattery ? Colors.red : Colors.amber[300],
+                      ),
+                      backgroundColor: lowBattery
+                          ? Colors.red.withOpacity(0.18)
+                          : chipBackgroundColor,
+                      label: Text(
+                        battery == 0
+                            ? '-- %'
+                            : '${battery.toStringAsFixed(0)} %',
+                        style: TextStyle(
+                          color: lowBattery ? Colors.red : null,
+                          fontWeight: lowBattery ? FontWeight.bold : null,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
               // 导航状态显示
@@ -892,16 +905,25 @@ class _MainFlamePageState extends State<MainFlamePage> {
             theme,
             child: IconButton(
               style: tbStyle,
-              icon: Icon(Icons.my_location, color: theme.colorScheme.primary),
-              tooltip: '定点导航',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const WaypointNavPage(),
-                  ),
-                );
-              },
+              icon: Icon(Icons.add_chart, color: theme.iconTheme.color),
+              tooltip: '建图',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MappingPage()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _MapToolbarShell(
+            theme,
+            child: IconButton(
+              style: tbStyle,
+              icon: Icon(Icons.map_outlined, color: theme.iconTheme.color),
+              tooltip: '地图列表',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MapListPage()),
+              ),
             ),
           ),
           const SizedBox(height: 6),
