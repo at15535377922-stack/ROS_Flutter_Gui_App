@@ -217,7 +217,8 @@ void RosGuiNode::SetupGuiStreamsLocked() {
   };
 
   add(create_subscription<sensor_msgs::msg::LaserScan>(
-      NormalizeTopicName(gui_settings_.LaserTopic), rclcpp::SensorDataQoS(),
+      NormalizeTopicName(gui_settings_.LaserTopic),
+      rclcpp::QoS(10).reliable().durability_volatile(),
       std::bind(&RosGuiNode::OnLaser, this, _1), sub_opt));
 
   add(create_subscription<nav_msgs::msg::Path>(
