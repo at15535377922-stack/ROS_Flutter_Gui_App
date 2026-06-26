@@ -22,6 +22,8 @@ import 'package:ros_flutter_gui_app/page/setting_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_quick_commands_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_terminal_page.dart';
 import 'package:ros_flutter_gui_app/page/ssh_widgets.dart';
+import 'package:ros_flutter_gui_app/page/map_manager_page.dart';
+import 'package:ros_flutter_gui_app/page/waypoint_nav_page.dart';
 
 class MainFlamePage extends StatefulWidget {
   @override
@@ -846,6 +848,42 @@ class _MainFlamePageState extends State<MainFlamePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          _MapToolbarShell(
+            theme,
+            child: IconButton(
+              style: tbStyle,
+              icon: Icon(Icons.map_outlined, color: theme.iconTheme.color),
+              tooltip: '地图管理',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MapManagerPage(
+                      onMapChanged: () => _reloadData(),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          _MapToolbarShell(
+            theme,
+            child: IconButton(
+              style: tbStyle,
+              icon: Icon(Icons.route_rounded, color: theme.iconTheme.color),
+              tooltip: '多点巡航导航',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const WaypointNavPage(),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
           _MapToolbarShell(
             theme,
             child: IconButton(

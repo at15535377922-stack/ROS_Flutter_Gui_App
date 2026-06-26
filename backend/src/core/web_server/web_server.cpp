@@ -389,6 +389,68 @@ void WebServer::RunImpl(WebServerConfig config) {
       },
       {Post});
 
+  // ── Waypoints API ─────────────────────────────────────────────────────────
+  // GET  /api/waypoints?map_name=xxx  → 读取该地图的 waypoints.json
+  // POST /api/waypoints?map_name=xxx  → 保存 body(JSON array) 到 waypoints.json
+  drogon::app().registerHandler(
+      "/api/waypoints",
+      [&json_cb](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& callback) {
+        const std::string map_name = req->getParameter("map_name");
+        if (map_name.empty() || map_name.find("..") != std::string::npos ||
+            map_name.find('/') != std::string::npos) {
+          json_cb(std::move(callback), JsonErrorBody("invalid or missing map_name"), drogon::k400BadRequest);
+          return;
+        }
+        MapManager* m = MapManager::Instance();
+        const std::string wp_path = m->GetMapDir(map_name) + "/waypoints.json";
+
+        if (req->getMethod() == drogon::Get) {
+          LOGGER_INFO("GET /api/waypoints map_name={}", map_name);
+          if (!fs::exists(wp_path)) {
+            // 不存在时返回空数组
+            json_cb(std::move(callback), "[]", drogon::k200OK);
+            return;
+          }
+          std::ifstream ifs(wp_path);
+          if (!ifs) {
+            json_cb(std::move(callback), JsonErrorBody("failed to read waypoints"), drogon::k500InternalServerError);
+            return;
+          }
+          std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+          json_cb(std::move(callback), content, drogon::k200OK);
+          return;
+        }
+
+        // POST
+        LOGGER_INFO("POST /api/waypoints map_name={}", map_name);
+        const std::string& body = req->getBody();
+        // 验证是合法 JSON array
+        try {
+          auto j = nlohmann::json::parse(body);
+          if (!j.is_array()) {
+            json_cb(std::move(callback), JsonErrorBody("body must be a JSON array"), drogon::k400BadRequest);
+            return;
+          }
+        } catch (const std::exception& e) {
+          json_cb(std::move(callback), JsonErrorBody(std::string("invalid json: ") + e.what()), drogon::k400BadRequest);
+          return;
+        }
+        // 确保地图目录存在
+        const std::string map_dir = m->GetMapDir(map_name);
+        if (!fs::exists(map_dir)) {
+          json_cb(std::move(callback), JsonErrorBody("map not found"), drogon::k404NotFound);
+          return;
+        }
+        std::ofstream ofs(wp_path, std::ios::trunc);
+        if (!ofs) {
+          json_cb(std::move(callback), JsonErrorBody("failed to write waypoints"), drogon::k500InternalServerError);
+          return;
+        }
+        ofs << body;
+        json_cb(std::move(callback), "{\"result\":\"ok\"}", drogon::k200OK);
+      },
+      {Get, Post});
+
   drogon::app().registerHandler(
       "/getAllMapList",
       [&json_cb](const HttpRequestPtr&, std::function<void(const HttpResponsePtr&)>&& callback) {

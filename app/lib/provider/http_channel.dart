@@ -174,4 +174,31 @@ class HttpChannel {
     }
     return Map<String, dynamic>.from(jsonDecode(res.body) as Map);
   }
+
+  // ── Waypoints API ──────────────────────────────────────────────────────────
+
+  /// 获取指定地图的导航点列表，地图不存在或无 waypoints 时返回空列表
+  Future<List<Map<String, dynamic>>> getWaypoints(String mapName) async {
+    final uri = _buildUri('/api/waypoints', queryParameters: {'map_name': mapName});
+    final res = await http.get(uri);
+    if (res.statusCode != 200) {
+      throw Exception('getWaypoints failed: ${res.statusCode} ${res.body}');
+    }
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  /// 保存导航点列表到指定地图目录
+  Future<void> saveWaypoints(
+      String mapName, List<Map<String, dynamic>> waypoints) async {
+    final uri = _buildUri('/api/waypoints', queryParameters: {'map_name': mapName});
+    final res = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+      body: jsonEncode(waypoints),
+    );
+    if (res.statusCode != 200) {
+      throw Exception('saveWaypoints failed: ${res.statusCode} ${res.body}');
+    }
+  }
 }
