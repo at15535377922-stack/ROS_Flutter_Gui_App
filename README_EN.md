@@ -60,7 +60,7 @@ The UI centers on a **tiled map** with robot pose, laser/path/cost overlays, and
 | --- | --- |
 | **Map** | High-performance raster tiles; global/local path, trajectory, costmaps, footprint, topology (streamed over WebSocket) |
 | **Sensing** | Laser & point cloud overlays; optional **MJPEG camera** window (topics via backend) |
-| **Navigation** | Nav status & goals; relocation; cancel nav; works with Nav2 / backend APIs |
+| **Navigation** | Nav status & goals; **relocation** (drag robot icon to real position, publish `/initialpose`); cancel nav; works with Nav2 / backend APIs; both main page and waypoint-nav page support relocation |
 | **Editing** | Map & topology editing, list/switch maps (HTTP REST) |
 | **Diagnostics** | Diagnostic messages with ERROR/WARN toasts on the main UI |
 | **Ops** | **SSH terminal** & **quick commands** (tunnel via backend `/ws/ssh`—see [app/README_EN.md](app/README_EN.md) §4.1) |
@@ -127,7 +127,17 @@ You can also install a client from Releases and point it at the same backend add
 
 ---
 
-## 7. Repository layout
+## 7. Changelog (recent)
+
+### 2026-06-27
+
+- **Fix**: compatible with `flutter_map 8.3.0` — removed deprecated `TileLayer.wrapAround`; use `MapOptions(crs: CrsSimple())` to prevent tile repetition on local maps
+- **Fix**: refactored `waypoint_nav_page` to use the shared `TileMap` component, fixing grey-tile display and incorrect robot-position coordinate conversion
+- **Feat**: `waypoint_nav_page` now supports **relocation** — drag the robot icon to the real position and confirm to publish `/initialpose` (consistent with the main page)
+
+---
+
+## 8. Repository layout
 
 | Path | Description |
 | --- | --- |
@@ -138,7 +148,7 @@ You can also install a client from Releases and point it at the same backend add
 
 ---
 
-## 8. Star history
+## 9. Star history
 
 <div align="center">
   <picture>

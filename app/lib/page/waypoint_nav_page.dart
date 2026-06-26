@@ -9,8 +9,10 @@ import 'package:toastification/toastification.dart';
 import 'package:ros_flutter_gui_app/basic/action_status.dart';
 import 'package:ros_flutter_gui_app/basic/nav_point.dart';
 import 'package:ros_flutter_gui_app/basic/RobotPose.dart';
+import 'package:ros_flutter_gui_app/display/grid.dart' show WorldToLatLngFn;
 import 'package:ros_flutter_gui_app/display/path.dart';
-import 'package:ros_flutter_gui_app/global/setting.dart';
+import 'package:ros_flutter_gui_app/display/tile_map.dart';
+import 'package:ros_flutter_gui_app/provider/global_state.dart';
 import 'package:ros_flutter_gui_app/provider/http_channel.dart';
 import 'package:ros_flutter_gui_app/provider/ws_channel.dart';
 
@@ -26,7 +28,7 @@ class WaypointNavPage extends StatefulWidget {
 }
 
 class _WaypointNavPageState extends State<WaypointNavPage> {
-  final MapController _mapController = MapController();
+  final GlobalKey<TileMapState> _tileMapKey = GlobalKey<TileMapState>();
 
   List<NavPoint> _waypoints = [];
   WaypointNavState _navState = WaypointNavState.idle;
@@ -108,20 +110,6 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
         autoCloseDuration: const Duration(seconds: 4),
       );
     }
-  }
-
-  void _onMapLongPress(TapPosition _, LatLng latlng) {
-    if (_navState == WaypointNavState.running) return;
-    final idx = _waypoints.length + 1;
-    setState(() {
-      _waypoints.add(NavPoint(
-        x: latlng.longitude,
-        y: -latlng.latitude,
-        theta: 0,
-        name: '导航点$idx',
-        type: NavPointType.navGoal,
-      ));
-    });
   }
 
   Future<void> _startNav() async {
@@ -236,16 +224,13 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
     );
   }
 
-  // ── 坐标转换 ────────────────────────────────────────────────────────────────
-
-  LatLng _worldToLatLng(double worldX, double worldY) =>
-      LatLng(-worldY, worldX);
+  // ── 坐标转换 (已移至 extraLayerBuilder 回调参数中使用) ──────────────────────────
 
   // ── 图层构建 ────────────────────────────────────────────────────────────────
 
-  Widget _buildWaypointLine() {
+  Widget _buildWaypointLine(WorldToLatLngFn toLatLng) {
     if (_waypoints.length < 2) return const SizedBox.shrink();
-    final points = _waypoints.map((p) => _worldToLatLng(p.x, p.y)).toList();
+    final points = _waypoints.map((p) => toLatLng(p.x, p.y)).toList();
     return PolylineLayer(
       polylines: [
         Polyline(
@@ -258,7 +243,7 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
     );
   }
 
-  Widget _buildWaypointMarkers() {
+  Widget _buildWaypointMarkers(WorldToLatLngFn toLatLng) {
     return MarkerLayer(
       markers: List.generate(_waypoints.length, (i) {
         final p = _waypoints[i];
@@ -267,7 +252,7 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
         final isDone =
             _navState == WaypointNavState.running && i < _currentIndex;
         return Marker(
-          point: _worldToLatLng(p.x, p.y),
+          point: toLatLng(p.x, p.y),
           width: 36,
           height: 36,
           child: Tooltip(
@@ -302,13 +287,13 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
     );
   }
 
-  Widget _buildTracePath(WsChannel ws) {
+  Widget _buildTracePath(WsChannel ws, WorldToLatLngFn toLatLng) {
     return ValueListenableBuilder(
       valueListenable: ws.tracePath,
       builder: (_, pts, __) {
         if (pts.length < 2) return const SizedBox.shrink();
         return buildPathLayer(
-          pts.map((p) => _worldToLatLng(p.x, p.y)).toList(),
+          pts.map((p) => toLatLng(p.x, p.y)).toList(),
           Colors.blue.withValues(alpha: 0.6),
           strokeWidth: 2,
         );
@@ -316,13 +301,13 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
     );
   }
 
-  Widget _buildGlobalPath(WsChannel ws) {
+  Widget _buildGlobalPath(WsChannel ws, WorldToLatLngFn toLatLng) {
     return ValueListenableBuilder(
       valueListenable: ws.globalPath,
       builder: (_, pts, __) {
         if (pts.length < 2) return const SizedBox.shrink();
         return buildPathLayer(
-          pts.map((p) => _worldToLatLng(p.x, p.y)).toList(),
+          pts.map((p) => toLatLng(p.x, p.y)).toList(),
           Colors.green.withValues(alpha: 0.7),
           strokeWidth: 2,
         );
@@ -330,14 +315,14 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
     );
   }
 
-  Widget _buildRobot(WsChannel ws) {
+  Widget _buildRobot(WsChannel ws, WorldToLatLngFn toLatLng) {
     return ValueListenableBuilder<RobotPose>(
       valueListenable: ws.robotPoseMap,
       builder: (_, pose, __) {
         return MarkerLayer(
           markers: [
             Marker(
-              point: _worldToLatLng(pose.x, pose.y),
+              point: toLatLng(pose.x, pose.y),
               width: 40,
               height: 40,
               child: Transform.rotate(
@@ -350,6 +335,17 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
         );
       },
     );
+  }
+
+  List<Widget> _buildExtraLayers(WorldToLatLngFn toLatLng) {
+    final ws = _ws;
+    return [
+      _buildTracePath(ws, toLatLng),
+      _buildGlobalPath(ws, toLatLng),
+      _buildWaypointLine(toLatLng),
+      _buildWaypointMarkers(toLatLng),
+      _buildRobot(ws, toLatLng),
+    ];
   }
 
   // ── 底部控制栏 ──────────────────────────────────────────────────────────────
@@ -511,79 +507,141 @@ class _WaypointNavPageState extends State<WaypointNavPage> {
 
   @override
   Widget build(BuildContext context) {
-    final ws = context.read<WsChannel>();
     final theme = Theme.of(context);
-    final tilesUrl =
-        '${globalSetting.tileServerUrl}/tiles/{z}/{x}/{y}.png';
+    final globalState = context.read<GlobalState>();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('多点巡航导航'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.list_alt_rounded),
-            tooltip: '导航点列表',
-            onPressed: _showWaypointListPanel,
-          ),
-          IconButton(
-            icon: const Icon(Icons.my_location),
-            tooltip: '定位到机器人',
-            onPressed: () {
-              final pose = ws.robotPoseMap.value;
-              _mapController.move(
-                  _worldToLatLng(pose.x, pose.y),
-                  _mapController.camera.zoom);
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Container(
-            color: theme.colorScheme.surfaceContainerLow,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Row(
-              children: [
-                _legendItem(Colors.orange, '待导航连线'),
-                const SizedBox(width: 16),
-                _legendItem(Colors.green, '规划路径'),
-                const SizedBox(width: 16),
-                _legendItem(Colors.blue.withValues(alpha: 0.6), '历史轨迹'),
-                const Spacer(),
-                const Text('长按地图添加点',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
+    return WillPopScope(
+      onWillPop: () async {
+        // 退出页面时如果处于重定位模式，自动取消
+        if (globalState.mode.value == Mode.reloc) {
+          globalState.mode.value = Mode.normal;
+        }
+        return true;
+      },
+      child: ValueListenableBuilder<Mode>(
+        valueListenable: globalState.mode,
+        builder: (context, mode, _) {
+          final isReloc = mode == Mode.reloc;
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('多点巡航导航'),
+              actions: [
+                // 重定位按钮
+                IconButton(
+                  icon: Icon(
+                    const IconData(0xe60f, fontFamily: "Reloc"),
+                    color: isReloc ? Colors.green : null,
+                  ),
+                  tooltip: isReloc ? '退出重定位' : '重定位',
+                  onPressed: () {
+                    globalState.mode.value =
+                        isReloc ? Mode.normal : Mode.reloc;
+                  },
+                ),
+                // 重定位确认 / 取消（仅在重定位模式下显示）
+                if (isReloc) ...[
+                  IconButton(
+                    icon: const Icon(Icons.check, color: Colors.green),
+                    tooltip: '确认重定位',
+                    onPressed: () {
+                      globalState.mode.value = Mode.normal;
+                      context.read<WsChannel>().sendRelocPose(
+                            _tileMapKey.currentState?.getRelocRobotPose() ??
+                                RobotPose.zero(),
+                          );
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.red),
+                    tooltip: '取消重定位',
+                    onPressed: () {
+                      globalState.mode.value = Mode.normal;
+                    },
+                  ),
+                ],
+                IconButton(
+                  icon: const Icon(Icons.list_alt_rounded),
+                  tooltip: '导航点列表',
+                  onPressed: isReloc ? null : _showWaypointListPanel,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.my_location),
+                  tooltip: '定位到机器人',
+                  onPressed: () => _tileMapKey.currentState?.moveToRobot(),
+                ),
               ],
             ),
-          ),
-          Expanded(
-            child: FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: const LatLng(0, 0),
-                initialZoom: 3,
-                minZoom: 1,
-                maxZoom: 22,
-                onLongPress: _onMapLongPress,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.all,
-                ),
-              ),
+            body: Column(
               children: [
-                TileLayer(
-                  urlTemplate: tilesUrl,
-                  userAgentPackageName: 'ros_flutter_gui_app',
-                  errorTileCallback: (tile, error, stackTrace) {},
+                // 重定位模式提示条
+                if (isReloc)
+                  Container(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline,
+                            size: 16, color: Colors.green),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            '重定位模式：拖动地图上的机器人图标对齐实际位置，旋转调整朝向，确认后发布',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.green),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    color: theme.colorScheme.surfaceContainerLow,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 6),
+                    child: Row(
+                      children: [
+                        _legendItem(Colors.orange, '待导航连线'),
+                        const SizedBox(width: 16),
+                        _legendItem(Colors.green, '规划路径'),
+                        const SizedBox(width: 16),
+                        _legendItem(
+                            Colors.blue.withValues(alpha: 0.6), '历史轨迹'),
+                        const Spacer(),
+                        const Text('长按地图添加点',
+                            style:
+                                TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: TileMap(
+                    key: _tileMapKey,
+                    enableMapInteraction: !isReloc,
+                    onLongPressWorld: isReloc
+                        ? null
+                        : (wx, wy) {
+                            if (_navState == WaypointNavState.running) return;
+                            final idx = _waypoints.length + 1;
+                            setState(() {
+                              _waypoints.add(NavPoint(
+                                x: wx,
+                                y: wy,
+                                theta: 0,
+                                name: '导航点$idx',
+                                type: NavPointType.navGoal,
+                              ));
+                            });
+                          },
+                    extraLayerBuilder:
+                        isReloc ? null : _buildExtraLayers,
+                  ),
                 ),
-                _buildTracePath(ws),
-                _buildGlobalPath(ws),
-                _buildWaypointLine(),
-                _buildWaypointMarkers(),
-                _buildRobot(ws),
+                if (!isReloc) _buildBottomBar(theme),
               ],
             ),
-          ),
-          _buildBottomBar(theme),
-        ],
+          );
+        },
       ),
     );
   }

@@ -24,10 +24,11 @@ class SlamViewPage extends StatefulWidget {
 class _SlamViewPageState extends State<SlamViewPage> {
   final MapController _mapController = MapController();
 
-  // 话题数据超时检测：超过 5s 没收到激光数据视为建图停止
+  // 话题数据超时检测：页面打开后等待 8s 再开始检测，避免后端初始化期间误报
   Timer? _timeoutTimer;
   bool _hasWarnedTimeout = false;
   int _laserCount = 0;
+  bool _checkEnabled = false;
 
   @override
   void initState() {
@@ -42,7 +43,16 @@ class _SlamViewPageState extends State<SlamViewPage> {
   }
 
   void _startTimeoutCheck() {
+    // 页面打开后延迟 8 秒再启用超时检测，避免后端/TF 初始化期间误报
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted) {
+        final ws = context.read<WsChannel>();
+        _laserCount = ws.laserPointData.value.laserPoseBaseLink.length;
+        _checkEnabled = true;
+      }
+    });
     _timeoutTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!_checkEnabled) return;
       final ws = context.read<WsChannel>();
       final laser = ws.laserPointData.value;
       final count = laser.laserPoseBaseLink.length;
@@ -163,6 +173,7 @@ class _SlamViewPageState extends State<SlamViewPage> {
               initialZoom: 3,
               minZoom: 1,
               maxZoom: 22,
+              crs: const CrsSimple(),
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all,
               ),

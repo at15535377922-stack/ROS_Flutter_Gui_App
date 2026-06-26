@@ -45,6 +45,12 @@ class TileMap extends StatefulWidget {
   final bool followRobot;
   final bool enlargeNavPointMarkers;
   final String mapName;
+  /// 额外叠加在地图上的图层（追加在内置图层之后）
+  final List<Widget> extraLayers;
+  /// 额外图层构建器，回调将提供坐标转换函数，可正确将世界坐标转为地图 LatLng
+  final List<Widget> Function(WorldToLatLngFn toLatLng)? extraLayerBuilder;
+  /// 长按地图时的世界坐标回调
+  final void Function(double worldX, double worldY)? onLongPressWorld;
 
   const TileMap({
     super.key,
@@ -63,6 +69,9 @@ class TileMap extends StatefulWidget {
     this.followRobot = false,
     this.enlargeNavPointMarkers = false,
     this.mapName = '',
+    this.extraLayers = const [],
+    this.extraLayerBuilder,
+    this.onLongPressWorld,
   });
 
   @override
@@ -417,6 +426,12 @@ class TileMapState extends State<TileMap> {
                 widget.onTap?.call();
                 _handleTap(latLng);
               },
+              onLongPress: (tapPosition, latLng) {
+                if (widget.onLongPressWorld != null) {
+                  final world = latLngToWorld(meta, latLng);
+                  widget.onLongPressWorld!(world.x, world.y);
+                }
+              },
               interactionOptions: InteractionOptions(
                 flags: !widget.enableMapInteraction
                     ? InteractiveFlag.none
@@ -450,6 +465,9 @@ class TileMapState extends State<TileMap> {
                 },
               ),
               _buildOverlayLayers(meta),
+              ...widget.extraLayers,
+              if (widget.extraLayerBuilder != null)
+                ...widget.extraLayerBuilder!(_worldToLatLng(meta)),
             ],
           ),
         );
