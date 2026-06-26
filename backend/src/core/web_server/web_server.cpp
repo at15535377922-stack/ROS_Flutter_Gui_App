@@ -423,7 +423,7 @@ void WebServer::RunImpl(WebServerConfig config) {
 
         // POST
         LOGGER_INFO("POST /api/waypoints map_name={}", map_name);
-        const std::string& body = req->getBody();
+        const std::string& body(req->getBody());
         // 验证是合法 JSON array
         try {
           auto j = nlohmann::json::parse(body);
