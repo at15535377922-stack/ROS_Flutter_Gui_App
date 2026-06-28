@@ -88,6 +88,7 @@ class TileMapState extends State<TileMap> {
   String? _error;
   final MapController _mapController = MapController();
   final ValueNotifier<TopologyMap> _topologyMap = ValueNotifier(TopologyMap(points: []));
+  bool _slamMetaInitialized = false; // 防止 didChangeDependencies 重复初始化
   String _currentMapName = '';
   bool _isLoadingMeta = false;
   double _currentZoom = 2.0;
@@ -112,7 +113,10 @@ class TileMapState extends State<TileMap> {
   @override
   void initState() {
     super.initState();
-    _syncMapDataFromWidget();
+    // slamMode 下必须等 didChangeDependencies 后 context.read 可用再初始化
+    if (!widget.slamMode) {
+      _syncMapDataFromWidget();
+    }
   }
 
   @override
@@ -124,6 +128,11 @@ class TileMapState extends State<TileMap> {
     _syncTopologyListener();
     _syncManualRefreshListener();
     _syncMapTileStyleListener();
+    // slamMode 在这里做一次性初始化（context.read 此时已可用）
+    if (widget.slamMode && !_slamMetaInitialized) {
+      _slamMetaInitialized = true;
+      _initSlamMeta();
+    }
   }
 
   @override
@@ -150,10 +159,12 @@ class TileMapState extends State<TileMap> {
 
   /// 建图模式：从 ws.map_ 的当前帧构建 MapMeta，并监听后续更新
   void _initSlamMeta() {
-    final ws = context.read<WsChannel>();
+    final ws = _wsChannelRef ?? context.read<WsChannel>();
+    // 防止重复添加监听器
+    ws.map_.removeListener(_onSlamMapUpdate);
+    ws.map_.addListener(_onSlamMapUpdate);
     _wsChannelRef = ws;
     _buildSlamMeta(ws.map_.value);
-    ws.map_.addListener(_onSlamMapUpdate);
   }
 
   void _onSlamMapUpdate() {
@@ -385,6 +396,19 @@ class TileMapState extends State<TileMap> {
       );
     }
     if (_meta == null) {
+      if (widget.slamMode) {
+        // 建图模式：等待后端推送第一帧 /map 数据
+        return const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('等待建图数据…', style: TextStyle(color: Colors.grey)),
+            ],
+          ),
+        );
+      }
       return const Center(child: CircularProgressIndicator());
     }
 
