@@ -327,6 +327,38 @@ LOAD_MAP_STATUS MapManager::LoadMapFromYaml(const std::string& yaml_file, bool u
     LoadTopologyMapFromJson(json_file, topo_map_);
     current_map_ = loaded_map;
     map_available_ = true;
+
+    // ── 自动补生成缺失的 tiles ──────────────────────────────────
+    // 从 yaml 路径的父目录名提取地图名，例如：
+    //   /home/wheeltec/.maps/map_test01/map_test01.yaml  →  map_test01
+    std::string map_name;
+    try {
+      map_name = fs::path(yaml_file).parent_path().filename().string();
+    } catch (...) {}
+    if (!map_name.empty()) {
+      const std::string tiles_dir = GetTilesDir(map_name);
+      bool tiles_missing = true;
+      try {
+        if (fs::exists(tiles_dir) && fs::is_directory(tiles_dir)) {
+          for (fs::recursive_directory_iterator it(tiles_dir), end_it;
+               it != end_it; ++it) {
+            if (fs::is_regular_file(it->status())) {
+              tiles_missing = false;
+              break;
+            }
+          }
+        }
+      } catch (...) {}
+      if (tiles_missing) {
+        LOGGER_INFO("LoadMapFromYaml: tiles missing for {}, auto generating...", map_name);
+        fs::create_directories(fs::path(tiles_dir));
+        TilesMapGenerator gen;
+        if (gen.GenerateAllTilesToDir(current_map_, tiles_dir, extra_zoom_levels_)) {
+          LOGGER_INFO("LoadMapFromYaml: tiles generated to {}", tiles_dir);
+        }
+      }
+    }
+    // ────────────────────────────────────────────────────────────
   }
   return LOAD_MAP_SUCCESS;
 }
