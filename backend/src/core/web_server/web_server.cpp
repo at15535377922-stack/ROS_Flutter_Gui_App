@@ -566,6 +566,25 @@ void WebServer::RunImpl(WebServerConfig config) {
                 drogon::k500InternalServerError);
             return;
           }
+          // 若该地图的 tiles 目录为空或不存在，则重新生成瓦片
+          const std::string tiles_dir = m->GetTilesDir(name);
+          bool tiles_missing = true;
+          try {
+            if (fs::exists(tiles_dir) && fs::is_directory(tiles_dir)) {
+              for (auto it = fs::recursive_directory_iterator(tiles_dir);
+                   it != fs::recursive_directory_iterator(); ++it) {
+                if (fs::is_regular_file(it->status())) {
+                  tiles_missing = false;
+                  break;
+                }
+              }
+            }
+          } catch (...) {}
+          if (tiles_missing) {
+            LOGGER_INFO("setCurrentMap: tiles missing for {}, regenerating...", name);
+            fs::create_directories(fs::path(tiles_dir));
+            m->RegenerateTiles(tiles_dir);
+          }
           PublishCurrentMapIfAvailable();
           json_cb(std::move(callback), "{\"result\":\"ok\"}", drogon::k200OK);
         }).detach();
