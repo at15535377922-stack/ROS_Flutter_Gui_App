@@ -7,6 +7,9 @@ import 'package:provider/provider.dart';
 import 'package:toastification/toastification.dart';
 
 import 'package:ros_flutter_gui_app/basic/RobotPose.dart';
+import 'package:ros_flutter_gui_app/basic/layer_config.dart';
+import 'package:ros_flutter_gui_app/basic/occupancy_map.dart';
+import 'package:ros_flutter_gui_app/display/costmap.dart';
 import 'package:ros_flutter_gui_app/display/laser.dart';
 import 'package:ros_flutter_gui_app/global/setting.dart';
 import 'package:ros_flutter_gui_app/provider/ws_channel.dart';
@@ -123,6 +126,20 @@ class _SlamViewPageState extends State<SlamViewPage> {
     );
   }
 
+  Widget _buildOccupancyOverlay(WsChannel ws) {
+    return ValueListenableBuilder<OccupancyMap>(
+      valueListenable: ws.map_,
+      builder: (_, map, __) {
+        return buildLocalCostMapOverlayLayer(
+          map,
+          1.0,
+          _worldToLatLng,
+          LocalCostmapMapStyle.obs,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ws = context.read<WsChannel>();
@@ -177,14 +194,11 @@ class _SlamViewPageState extends State<SlamViewPage> {
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all,
               ),
+              backgroundColor: Colors.white,
             ),
             children: [
-              // 底层地图瓦片（当前地图 /map 内容）
-              TileLayer(
-                urlTemplate: tilesUrl,
-                userAgentPackageName: 'ros_flutter_gui_app',
-                errorTileCallback: (tile, error, stackTrace) {},
-              ),
+              // 白色底图 + 占用栅格地图：黑色障碍
+              _buildOccupancyOverlay(ws),
               // 实时激光点（红色）
               _buildLaserLayer(ws),
               // 机器人位置
@@ -203,19 +217,29 @@ class _SlamViewPageState extends State<SlamViewPage> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    Container(
+                      width: 14,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.black54),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text('白底/空白区域', style: TextStyle(fontSize: 12)),
+                    const SizedBox(width: 14),
+                    Container(width: 14, height: 8, color: Colors.black87),
+                    const SizedBox(width: 4),
+                    const Text('已知障碍', style: TextStyle(fontSize: 12)),
+                    const SizedBox(width: 14),
                     Container(width: 10, height: 10,
                         decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
                     const SizedBox(width: 6),
-                    const Text('激光点', style: TextStyle(fontSize: 12)),
+                    const Text('激光点云', style: TextStyle(fontSize: 12)),
                     const SizedBox(width: 14),
                     const Icon(Icons.navigation, color: Colors.blue, size: 14),
                     const SizedBox(width: 4),
                     const Text('机器人', style: TextStyle(fontSize: 12)),
-                    const SizedBox(width: 14),
-                    Container(width: 14, height: 8,
-                        color: Colors.black87),
-                    const SizedBox(width: 4),
-                    const Text('/map 障碍', style: TextStyle(fontSize: 12)),
                   ],
                 ),
               ),
