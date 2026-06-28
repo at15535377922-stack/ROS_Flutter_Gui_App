@@ -387,9 +387,16 @@ void RosGuiNode::OnLaser(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
   std::string e;
   if (!LookupLatestTfPose(
           *tf_buffer_, gui_settings_.BaseLinkFrameName, msg->header.frame_id, &trans_v2, &e)) {
-    LOGGER_ERROR(
-        "OnLaser TF {} <- {} failed: {}", gui_settings_.BaseLinkFrameName, msg->header.frame_id, e);
-    return;
+    // TF 查询失败时（如底盘驱动未启动），以零偏移（laser 帧原点 ≈ base_link）继续发送，
+    // 避免建图页面收不到任何激光数据。警告降频：每 5 秒打印一次。
+    static auto last_warn = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+    auto now = std::chrono::steady_clock::now();
+    if (now - last_warn > std::chrono::seconds(5)) {
+      LOGGER_WARN("OnLaser TF {} <- {} failed (using identity): {}",
+                  gui_settings_.BaseLinkFrameName, msg->header.frame_id, e);
+      last_warn = now;
+    }
+    trans_v2 = Pose2{};  // 零偏移，激光点以 laser 帧坐标系原点为基准
   }
   ros_gui_backend::pb::RobotMessage out;
   auto* lm = out.mutable_laser_scan();
