@@ -1,22 +1,18 @@
-import 'dart:async';
-
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:toastification/toastification.dart';
 
-import 'package:ros_flutter_gui_app/basic/RobotPose.dart';
-import 'package:ros_flutter_gui_app/basic/layer_config.dart';
-import 'package:ros_flutter_gui_app/basic/occupancy_map.dart';
-import 'package:ros_flutter_gui_app/display/costmap.dart';
-import 'package:ros_flutter_gui_app/display/laser.dart';
-import 'package:ros_flutter_gui_app/global/setting.dart';
+import 'package:ros_flutter_gui_app/display/tile_map.dart';
+import 'package:ros_flutter_gui_app/page/gamepad_widget.dart';
+import 'package:ros_flutter_gui_app/provider/global_state.dart';
 import 'package:ros_flutter_gui_app/provider/ws_channel.dart';
 
 /// 建图实时可视化页面
-/// 显示：当前 /map 瓦片 + 实时 /scan 激光点（红色）+ 机器人位置
-/// 建图 / 保存由 ROS 后台负责，本页只负责渲染
+///
+/// 完全复用 [TileMap] 组件（slamMode=true）：
+/// - 不加载已有地图瓦片；底图来自实时 /map 占用栅格
+/// - 激光点、机器人位置/朝向、路径、代价图等图层与主页面一致
+/// - 支持 Gamepad 遥控、跟随机器人、缩放等工具栏
 class SlamViewPage extends StatefulWidget {
   const SlamViewPage({super.key});
 
@@ -25,133 +21,45 @@ class SlamViewPage extends StatefulWidget {
 }
 
 class _SlamViewPageState extends State<SlamViewPage> {
-  final MapController _mapController = MapController();
-
-  // 话题数据超时检测：页面打开后等待 8s 再开始检测，避免后端初始化期间误报
-  Timer? _timeoutTimer;
-  bool _hasWarnedTimeout = false;
-  int _laserCount = 0;
-  bool _checkEnabled = false;
+  final GlobalKey<TileMapState> _tileMapKey = GlobalKey<TileMapState>();
 
   @override
   void initState() {
     super.initState();
-    _startTimeoutCheck();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 进入建图页时确保不处于地图编辑模式
+      final gs = context.read<GlobalState>();
+      if (gs.mode.value == Mode.mapEdit) {
+        gs.mode.value = Mode.normal;
+      }
+    });
   }
 
   @override
   void dispose() {
-    _timeoutTimer?.cancel();
+    // 退出时若处于跟随模式，恢复正常（避免影响主页面）
+    if (mounted) {
+      final gs = context.read<GlobalState>();
+      if (gs.mode.value == Mode.robotFixedCenter) {
+        gs.mode.value = Mode.normal;
+      }
+    }
     super.dispose();
   }
 
-  void _startTimeoutCheck() {
-    // 页面打开后延迟 8 秒再启用超时检测，避免后端/TF 初始化期间误报
-    Future.delayed(const Duration(seconds: 8), () {
-      if (mounted) {
-        final ws = context.read<WsChannel>();
-        _laserCount = ws.laserPointData.value.laserPoseBaseLink.length;
-        _checkEnabled = true;
-      }
-    });
-    _timeoutTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!_checkEnabled) return;
-      final ws = context.read<WsChannel>();
-      final laser = ws.laserPointData.value;
-      final count = laser.laserPoseBaseLink.length;
-      if (count != _laserCount) {
-        // 有新数据
-        _laserCount = count;
-        _hasWarnedTimeout = false;
-      } else {
-        if (!_hasWarnedTimeout) {
-          _hasWarnedTimeout = true;
-          if (mounted) {
-            toastification.show(
-              context: context,
-              type: ToastificationType.warning,
-              title: const Text('建图数据超时'),
-              description: const Text('未收到 /scan 数据，请确认建图 Launch 是否正在运行'),
-              autoCloseDuration: const Duration(seconds: 5),
-            );
-          }
-        }
-      }
-    });
-  }
+  // ──────────────────────────────── 顶栏 ────────────────────────────────
 
-  LatLng _worldToLatLng(double worldX, double worldY) {
-    // 复用全局瓦片地图坐标系转换，与 tile_map.dart 保持一致
-    // 瓦片地图：lat = -worldY, lng = worldX
-    return LatLng(-worldY, worldX);
-  }
-
-  Widget _buildLaserLayer(WsChannel ws) {
-    return ValueListenableBuilder(
-      valueListenable: ws.laserPointData,
-      builder: (_, laserData, __) {
-        return buildLaserLayer(
-          ws,
-          _worldToLatLng,
-          color: Colors.red,
-          dotRadius: 2.5,
-        );
-      },
-    );
-  }
-
-  Widget _buildRobotLayer(WsChannel ws) {
-    return ValueListenableBuilder<RobotPose>(
-      valueListenable: ws.robotPoseMap,
-      builder: (_, pose, __) {
-        final latLng = _worldToLatLng(pose.x, pose.y);
-        return MarkerLayer(
-          markers: [
-            Marker(
-              point: latLng,
-              width: 40,
-              height: 40,
-              child: Transform.rotate(
-                angle: -(pose.theta),
-                child: const Icon(
-                  Icons.navigation,
-                  color: Colors.blue,
-                  size: 32,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildOccupancyOverlay(WsChannel ws) {
-    return ValueListenableBuilder<OccupancyMap>(
-      valueListenable: ws.map_,
-      builder: (_, map, __) {
-        return buildLocalCostMapOverlayLayer(
-          map,
-          1.0,
-          _worldToLatLng,
-          LocalCostmapMapStyle.obs,
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildTopBar(BuildContext context, ThemeData theme) {
     final ws = context.read<WsChannel>();
-    final theme = Theme.of(context);
-    // 当前地图 tiles URL（复用后端已有的 /tiles/ 接口）
-    final tilesUrl =
-        '${globalSetting.tileServerUrl}/tiles/{z}/{x}/{y}.png';
-
-    return Scaffold(
-      appBar: AppBar(
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: AppBar(
         title: const Text('建图实时可视化'),
         actions: [
+          // 激光点状态指示
           ValueListenableBuilder(
             valueListenable: ws.laserPointData,
             builder: (_, laserData, __) {
@@ -181,79 +89,143 @@ class _SlamViewPageState extends State<SlamViewPage> {
           ),
         ],
       ),
-      body: Stack(
+    );
+  }
+
+  // ──────────────────────────────── 右侧工具栏 ────────────────────────────
+
+  Widget _toolbarShell(ThemeData theme, {required Widget child}) {
+    return Material(
+      elevation: 2,
+      shadowColor: Colors.black26,
+      borderRadius: BorderRadius.circular(12),
+      color: theme.colorScheme.surface,
+      child: child,
+    );
+  }
+
+  Widget _buildRightToolbar(BuildContext context, ThemeData theme) {
+    final gs = context.read<GlobalState>();
+    final tbStyle = IconButton.styleFrom(
+      minimumSize: const Size(44, 44),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.all(10),
+    );
+    return Positioned(
+      right: 10,
+      top: 70,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: const LatLng(0, 0),
-              initialZoom: 3,
-              minZoom: 1,
-              maxZoom: 22,
-              crs: const CrsSimple(),
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all,
-              ),
-              backgroundColor: Colors.white,
-            ),
-            children: [
-              // 白色底图 + 占用栅格地图：黑色障碍
-              _buildOccupancyOverlay(ws),
-              // 实时激光点（红色）
-              _buildLaserLayer(ws),
-              // 机器人位置
-              _buildRobotLayer(ws),
-            ],
-          ),
-          // 说明文字
-          Positioned(
-            left: 12,
-            bottom: 16,
-            child: Card(
-              color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.85),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 14,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: Colors.black54),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text('白底/空白区域', style: TextStyle(fontSize: 12)),
-                    const SizedBox(width: 14),
-                    Container(width: 14, height: 8, color: Colors.black87),
-                    const SizedBox(width: 4),
-                    const Text('已知障碍', style: TextStyle(fontSize: 12)),
-                    const SizedBox(width: 14),
-                    Container(width: 10, height: 10,
-                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
-                    const SizedBox(width: 6),
-                    const Text('激光点云', style: TextStyle(fontSize: 12)),
-                    const SizedBox(width: 14),
-                    const Icon(Icons.navigation, color: Colors.blue, size: 14),
-                    const SizedBox(width: 4),
-                    const Text('机器人', style: TextStyle(fontSize: 12)),
-                  ],
+          // 缩放 +
+          _toolbarShell(theme,
+              child: IconButton(
+                style: tbStyle,
+                icon: const Icon(Icons.zoom_in_rounded),
+                tooltip: '放大',
+                onPressed: () => _tileMapKey.currentState?.zoomIn(),
+              )),
+          const SizedBox(height: 6),
+          // 缩放 -
+          _toolbarShell(theme,
+              child: IconButton(
+                style: tbStyle,
+                icon: const Icon(Icons.zoom_out_rounded),
+                tooltip: '缩小',
+                onPressed: () => _tileMapKey.currentState?.zoomOut(),
+              )),
+          const SizedBox(height: 6),
+          // 跟随机器人
+          ValueListenableBuilder<Mode>(
+            valueListenable: gs.mode,
+            builder: (_, mode, __) => _toolbarShell(
+              theme,
+              child: IconButton(
+                style: tbStyle,
+                icon: Icon(
+                  Icons.location_searching_rounded,
+                  color: mode == Mode.robotFixedCenter
+                      ? Colors.green
+                      : theme.iconTheme.color,
                 ),
+                tooltip: '跟随机器人',
+                onPressed: () {
+                  gs.mode.value = gs.mode.value == Mode.robotFixedCenter
+                      ? Mode.normal
+                      : Mode.robotFixedCenter;
+                },
               ),
             ),
+          ),
+          const SizedBox(height: 6),
+          // 遥控开关
+          ValueListenableBuilder<bool>(
+            valueListenable: gs.isManualCtrl,
+            builder: (_, isManual, __) {
+              final ws = context.read<WsChannel>();
+              return _toolbarShell(
+                theme,
+                child: IconButton(
+                  style: tbStyle,
+                  icon: Icon(
+                    const IconData(0xea45, fontFamily: 'GamePad'),
+                    color: isManual ? Colors.green : theme.iconTheme.color,
+                  ),
+                  tooltip: isManual ? '关闭遥控' : '开启遥控',
+                  onPressed: () {
+                    if (isManual) {
+                      gs.isManualCtrl.value = false;
+                      ws.stopMunalCtrl();
+                    } else {
+                      gs.isManualCtrl.value = true;
+                      ws.startMunalCtrl();
+                      toastification.show(
+                        context: context,
+                        title: const Text('遥控已开启'),
+                        description: const Text('使用左摇杆平移，右摇杆旋转'),
+                        autoCloseDuration: const Duration(seconds: 3),
+                      );
+                    }
+                    setState(() {});
+                  },
+                ),
+              );
+            },
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.small(
-        tooltip: '定位到机器人',
-        onPressed: () {
-          final pose = ws.robotPoseMap.value;
-          _mapController.move(_worldToLatLng(pose.x, pose.y), _mapController.camera.zoom);
+    );
+  }
+
+  // ──────────────────────────────── build ────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final gs = context.read<GlobalState>();
+
+    return Scaffold(
+      body: ValueListenableBuilder<Mode>(
+        valueListenable: gs.mode,
+        builder: (context, mode, _) {
+          return Stack(
+            children: [
+              // ── 核心地图（slamMode=true：跳过瓦片底图，实时显示 /map 栅格） ──
+              TileMap(
+                key: _tileMapKey,
+                slamMode: true,
+                followRobot: mode == Mode.robotFixedCenter,
+                enableMapInteraction: true,
+              ),
+              // ── 顶栏 ──
+              _buildTopBar(context, theme),
+              // ── 右侧工具栏 ──
+              _buildRightToolbar(context, theme),
+              // ── Gamepad 摇杆（与主页面共享 GlobalState.isManualCtrl） ──
+              Positioned.fill(child: GamepadWidget()),
+            ],
+          );
         },
-        child: const Icon(Icons.my_location),
       ),
     );
   }

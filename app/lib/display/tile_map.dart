@@ -9,6 +9,8 @@ import 'package:ros_flutter_gui_app/basic/nav_point.dart';
 import 'package:ros_flutter_gui_app/basic/RobotPose.dart';
 import 'package:ros_flutter_gui_app/basic/tile_map_meta.dart';
 import 'package:ros_flutter_gui_app/basic/topology_map.dart';
+import 'package:ros_flutter_gui_app/basic/layer_config.dart';
+import 'package:ros_flutter_gui_app/basic/occupancy_map.dart';
 import 'package:ros_flutter_gui_app/display/costmap.dart';
 import 'package:ros_flutter_gui_app/display/grid.dart' show WorldToLatLngFn;
 import 'package:ros_flutter_gui_app/display/laser.dart' hide WorldToLatLngFn;
@@ -51,6 +53,8 @@ class TileMap extends StatefulWidget {
   final List<Widget> Function(WorldToLatLngFn toLatLng)? extraLayerBuilder;
   /// 长按地图时的世界坐标回调
   final void Function(double worldX, double worldY)? onLongPressWorld;
+  /// 建图模式：跳过 tile 底图加载，直接从 ws.map_（/map topic）实时渲染占用栅格
+  final bool slamMode;
 
   const TileMap({
     super.key,
@@ -72,6 +76,7 @@ class TileMap extends StatefulWidget {
     this.extraLayers = const [],
     this.extraLayerBuilder,
     this.onLongPressWorld,
+    this.slamMode = false,
   });
 
   @override
@@ -136,7 +141,47 @@ class TileMapState extends State<TileMap> {
   }
 
   void _syncMapDataFromWidget() {
-    _loadMetaByMapName();
+    if (widget.slamMode) {
+      _initSlamMeta();
+    } else {
+      _loadMetaByMapName();
+    }
+  }
+
+  /// 建图模式：从 ws.map_ 的当前帧构建 MapMeta，并监听后续更新
+  void _initSlamMeta() {
+    final ws = context.read<WsChannel>();
+    _wsChannelRef = ws;
+    _buildSlamMeta(ws.map_.value);
+    ws.map_.addListener(_onSlamMapUpdate);
+  }
+
+  void _onSlamMapUpdate() {
+    final ws = _wsChannelRef;
+    if (!mounted || ws == null) return;
+    _buildSlamMeta(ws.map_.value);
+  }
+
+  void _buildSlamMeta(OccupancyMap occ) {
+    final cfg = occ.mapConfig;
+    if (cfg.width <= 0 || cfg.height <= 0) return;
+    // 使用一个足够大的 maxZoom，使图层可以正常渲染
+    const int kSlamMaxZoom = 8;
+    const int kExtraZoom = 0;
+    final meta = MapMeta(
+      resolution: cfg.resolution > 0 ? cfg.resolution : 0.05,
+      originX: cfg.originX,
+      originY: cfg.originY,
+      width: cfg.width,
+      height: cfg.height,
+      maxZoom: kSlamMaxZoom,
+      extraZoomLevels: kExtraZoom,
+    );
+    if (!mounted) return;
+    setState(() {
+      _meta = meta;
+      _error = null;
+    });
   }
 
   Future<void> _loadMetaByMapName() async {
@@ -247,6 +292,9 @@ class TileMapState extends State<TileMap> {
     if (_topologyListenerAttached && _mapManagerTopologyRef != null) {
       _mapManagerTopologyRef!.removeListener(_onMapManagerTopologyChanged);
       _topologyListenerAttached = false;
+    }
+    if (widget.slamMode) {
+      _wsChannelRef?.map_.removeListener(_onSlamMapUpdate);
     }
     _topologyMap.dispose();
     super.dispose();
@@ -439,31 +487,46 @@ class TileMapState extends State<TileMap> {
               ),
             ),
             children: [
-              TileLayer(
-                key: ValueKey('tile_layer_${_currentMapName}_$_tileCacheBuster'),
-                urlTemplate: _currentMapName.isNotEmpty
-                    ? '${globalSetting.tileServerUrl}/tiles/{map_name}/{z}/{x}/{y}.png?_ts=$_tileCacheBuster'
-                    : '${globalSetting.tileServerUrl}/tiles/{z}/{x}/{y}.png?_ts=$_tileCacheBuster',
-                additionalOptions: {'map_name': _currentMapName},
-                userAgentPackageName: 'ros_flutter_gui_app',
-                tileBounds: getTileBounds(),
-                tileProvider: NetworkTileProvider(
-                  cachingProvider: const DisabledMapCachingProvider(),
+              if (!widget.slamMode) ...[  
+                TileLayer(
+                  key: ValueKey('tile_layer_${_currentMapName}_$_tileCacheBuster'),
+                  urlTemplate: _currentMapName.isNotEmpty
+                      ? '${globalSetting.tileServerUrl}/tiles/{map_name}/{z}/{x}/{y}.png?_ts=$_tileCacheBuster'
+                      : '${globalSetting.tileServerUrl}/tiles/{z}/{x}/{y}.png?_ts=$_tileCacheBuster',
+                  additionalOptions: {'map_name': _currentMapName},
+                  userAgentPackageName: 'ros_flutter_gui_app',
+                  tileBounds: getTileBounds(),
+                  tileProvider: NetworkTileProvider(
+                    cachingProvider: const DisabledMapCachingProvider(),
+                  ),
+                  tileBuilder: (context, child, tileImage) {
+                    if (tileImage.imageInfo?.image != null && !tileImage.loadError) {
+                      return RawImage(
+                        image: tileImage.imageInfo!.image,
+                        fit: BoxFit.fill,
+                        filterQuality: FilterQuality.none,
+                        opacity: tileImage.opacity == 1
+                            ? null
+                            : AlwaysStoppedAnimation(tileImage.opacity),
+                      );
+                    }
+                    return child;
+                  },
                 ),
-                tileBuilder: (context, child, tileImage) {
-                  if (tileImage.imageInfo?.image != null && !tileImage.loadError) {
-                    return RawImage(
-                      image: tileImage.imageInfo!.image,
-                      fit: BoxFit.fill,
-                      filterQuality: FilterQuality.none,
-                      opacity: tileImage.opacity == 1
-                          ? null
-                          : AlwaysStoppedAnimation(tileImage.opacity),
-                    );
-                  }
-                  return child;
-                },
-              ),
+              ] else ...[  
+                // 建图模式：实时渲染 /map topic 的占用栅格作为底图
+                Consumer<WsChannel>(
+                  builder: (ctx, ws, _) => ValueListenableBuilder<OccupancyMap>(
+                    valueListenable: ws.map_,
+                    builder: (_, occ, __) => buildLocalCostMapOverlayLayer(
+                      occ,
+                      1.0,
+                      _worldToLatLng(meta),
+                      LocalCostmapMapStyle.raw,
+                    ),
+                  ),
+                ),
+              ],
               _buildOverlayLayers(meta),
               ...widget.extraLayers,
               if (widget.extraLayerBuilder != null)
